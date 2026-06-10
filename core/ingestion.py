@@ -66,3 +66,60 @@ class IngestedDocument:
     ingested_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+
+## PDF Text Extraction
+
+MIN_TEXT_LENGTH = 30  # pages below this will be sent to OCR
+
+# replace hidden control characters 
+def _clean_text(text: str) -> str:
+    """Normalise whitespace, strip control chars."""
+    text = text.replace("\x0c", "\n").replace("\x0b", "\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    lines = [line.strip() for line in text.splitlines()]
+    return "\n".join(lines).strip()
+
+# extract text from each page
+def _extract_pages(doc: fitz.Document) -> Tuple[List[PageContent], List[int]]:
+    """
+    Walk every page — extract text via PyMuPDF.
+    Returns (pages, list_of_page_indices_needing_ocr).
+    """
+    pages: List[PageContent] = []
+    ocr_needed: List[int] = []
+
+    for i in range(doc.page_count):
+        page = doc[i]
+        raw = page.get_text("text")
+        clean = _clean_text(raw)
+        has_images = bool(page.get_images(full=True))
+
+        # id text length less than 30 add it into ocr scanning
+        if len(clean) < MIN_TEXT_LENGTH:
+            ocr_needed.append(i)
+            pages.append(PageContent(
+                page_number=i + 1, text="",
+                method="easyocr", has_images=has_images,
+            ))
+        else:
+            pages.append(PageContent(
+                page_number=i + 1, text=clean,
+                method="pymupdf", has_images=has_images,
+            ))
+
+    return pages, ocr_needed
+
+def _get_page_image(doc: fitz.Document, page_idx: int, dpi: int = 300) -> bytes:
+    """Rasterise one PDF page to PNG bytes."""
+    pix = doc[page_idx].get_pixmap(dpi=dpi)
+    return pix.tobytes("png")
+
+# find the hidden header and extract basic tags
+def _pdf_metadata(doc: fitz.Document) -> Dict[str, Any]:
+    meta = doc.metadata or {}
+    return {
+        "title": meta.get("title", ""),
+        "author": meta.get("author", ""),
+        "subject": meta.get("subject", ""),
+        "page_count": doc.page_count,
+    }
