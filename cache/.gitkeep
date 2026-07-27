@@ -1,0 +1,4 @@
+# This directory stores FAISS index files saved to disk.
+# Files are auto-generated during document processing.
+# .index files contain the FAISS vector index
+# .meta files contain the associated chunk metadata

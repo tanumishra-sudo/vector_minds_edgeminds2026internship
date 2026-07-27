@@ -1,4 +1,27 @@
+# ============================================================
+# AI Study Buddy - Package Dependency Manifest
+# ============================================================
+# UI Framework
+streamlit>=1.32.0
+
+# PDF & OCR Processing (Phase 1: Ingestion & Parsing Layer)
 PyMuPDF>=1.24.0
-easyocr>=1.7.0
-Pillow>=10.0.0
-tiktoken>=0.7.0  
+easyocr>=1.7.1
+Pillow>=10.2.0
+
+# Embedding & Vector Store (Phase 2: Local RAG Store)
+sentence-transformers>=2.5.0
+faiss-cpu>=1.8.0
+
+# LLM Inference (Phase 3: LLM Engine & Structural Interface)
+ollama>=0.2.0
+
+# Visualization (Phase 3: Graphviz DOT Compilation)
+graphviz>=0.20.3
+
+# Persistence & Telemetry (Phase 5)
+# SQLite is built-in to Python stdlib
+
+# Utilities
+numpy>=1.26.0
+torch>=2.2.0
