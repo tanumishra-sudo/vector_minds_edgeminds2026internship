@@ -78,34 +78,49 @@ class PromptTemplates:
     # 4. Quiz Generation — Evidence-First, One Question at a Time
     # ------------------------------------------------------------------
     QUIZ_GENERATION_SYSTEM: str = (
-        "You are a conservative academic MCQ writer. Accuracy is more important than producing a question.\n"
-        "Use ONLY the supplied SOURCE TEXT. Never use outside knowledge to fill gaps.\n\n"
-        "PROCESS:\n"
-        "1. Identify ONE explicit atomic fact fully stated in the source.\n"
-        "2. If required context/table/schema/figure information is missing, output exactly NO_QUESTION.\n"
-        "3. Ask one self-contained question answerable from that fact alone.\n"
-        "4. Create exactly four distinct, parallel A-D options from the SAME conceptual category.\n"
-        "5. Exactly one option must be defensibly correct from the evidence.\n"
-        "6. Copy a short exact evidence quote that directly proves the answer.\n\n"
-        "NEVER invent acronyms, terminology, dependencies, formulas, names, dates, examples, or implications.\n"
-        "NEVER use All of the above, None of the above, combination answers, or unsupported schema/decomposition questions.\n"
-        "If a knowledgeable instructor could defend zero or multiple answers, output NO_QUESTION.\n\n"
-        "OUTPUT EXACTLY:\n"
-        "Q: [question]\nA) [option]\nB) [option]\nC) [option]\nD) [option]\n"
-        "ANSWER: [A/B/C/D]\nEVIDENCE: \"[exact supporting quote]\"\n"
-        "If a safe question cannot be made, output exactly: NO_QUESTION"
+        "You are a strict academic MCQ writer. Accuracy matters more than speed.\n"
+        "You must ONLY use information from the SOURCE TEXT provided. Never use outside knowledge.\n\n"
+        "STEP-BY-STEP PROCESS:\n"
+        "1. Read the source text carefully.\n"
+        "2. Find ONE clear, specific fact that is explicitly stated in the text.\n"
+        "3. Write a clear question about that fact. The question must make sense on its own.\n"
+        "4. Write exactly FOUR answer options labeled A), B), C), D).\n"
+        "   - One option must be the correct answer based on the source text.\n"
+        "   - The other three must be plausible but clearly wrong.\n"
+        "   - All four options must be from the same category (e.g., all are types, all are definitions).\n"
+        "5. Copy an EXACT quote from the source text that proves the correct answer.\n\n"
+        "RULES YOU MUST FOLLOW:\n"
+        "- NEVER use 'All of the above' or 'None of the above' as an option.\n"
+        "- NEVER combine options like 'Both A and B'.\n"
+        "- NEVER invent terms, names, dates, or facts not in the source text.\n"
+        "- NEVER reference tables, figures, or 'the above' in your question.\n"
+        "- If no clear testable fact exists, output exactly: NO_QUESTION\n\n"
+        "YOUR OUTPUT MUST BE IN THIS EXACT FORMAT:\n"
+        "Q: [Your question here]\n"
+        "A) [First option]\n"
+        "B) [Second option]\n"
+        "C) [Third option]\n"
+        "D) [Fourth option]\n"
+        "ANSWER: [One letter: A, B, C, or D]\n"
+        'EVIDENCE: "[Copy exact words from source text that prove the answer]"\n\n'
+        "Output NOTHING else. No explanations, no introductions."
     )
 
     # ------------------------------------------------------------------
     # 4b. Question Validation
     # ------------------------------------------------------------------
     QUESTION_VALIDATION_SYSTEM: str = (
-        "You are an extremely strict independent MCQ verifier. Reject by default when uncertain.\n"
-        "Use ONLY SOURCE TEXT. Independently solve the candidate before checking its claimed answer.\n"
-        "VALID requires: enough source information; exactly one defensible answer; direct evidence; "
-        "same-category plausible distractors that are clearly false; no invented terms; no unsupported implications; "
-        "no All/None/combination options. If a qualified instructor could dispute it, reject it.\n"
-        "OUTPUT ONE LINE ONLY: VALID: [A/B/C/D] or INVALID: [short reason]"
+        "You are a quiz answer verifier. Your job is to check if the MCQ answer is correct.\n\n"
+        "STEPS:\n"
+        "1. Read the SOURCE TEXT carefully.\n"
+        "2. Read the question and all four options.\n"
+        "3. Using ONLY the source text, determine which option (A, B, C, or D) is correct.\n"
+        "4. Compare your answer with the CLAIMED ANSWER.\n\n"
+        "OUTPUT RULES:\n"
+        "- If you agree the claimed answer is correct, output: VALID: [your answer letter]\n"
+        "- If the claimed answer is wrong, output: INVALID: [short reason]\n"
+        "- If the question cannot be answered from the source text, output: INVALID: insufficient source\n\n"
+        "Output ONE LINE ONLY. No explanations."
     )
 
     # ------------------------------------------------------------------

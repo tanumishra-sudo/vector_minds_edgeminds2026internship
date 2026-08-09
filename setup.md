@@ -1,445 +1,335 @@
-# 🚀 Mentora — Jetson Orin Setup & Deployment Guide
+# 🚀 Mentora — Jetson Orin Deployment Guide
 
-> Complete instructions to set up and run the **AI Study Buddy (Mentora)** application on NVIDIA Jetson Orin hardware.
-
----
-
-## Table of Contents
-
-1. [Hardware Requirements](#1--hardware-requirements)
-2. [Software Prerequisites](#2--software-prerequisites)
-3. [JetPack SDK & OS Setup](#3--jetpack-sdk--os-setup)
-4. [System-Level Dependencies](#4--system-level-dependencies)
-5. [Python Environment Setup](#5--python-environment-setup)
-6. [Ollama & LLM Configuration](#6--ollama--llm-configuration)
-7. [FAISS Index Pre-Build (Laptop → Jetson)](#7--faiss-index-pre-build-laptop--jetson)
-8. [Performance Tuning for Jetson Orin](#8--performance-tuning-for-jetson-orin)
-9. [Running the Application](#9--running-the-application)
-10. [Troubleshooting](#10--troubleshooting)
+> Step-by-step commands to deploy **AI Study Buddy (Mentora)** on the Jetson Orin board.
+>
+> **Environment:** Docker container on Jetson Orin · Read-only root filesystem · Python 3.10 · Ollama pre-installed
 
 ---
 
-## 1 — Hardware Requirements
+## Quick Start — Copy-Paste All Commands
 
-| Component             | Minimum Specification                              |
-|-----------------------|----------------------------------------------------|
-| **Board**             | NVIDIA Jetson Orin Nano (8 GB) or Jetson Orin NX   |
-| **Storage**           | 64 GB+ microSD / NVMe SSD (SSD strongly recommended) |
-| **RAM**               | 8 GB unified (LPDDR5)                              |
-| **Power Supply**      | USB-C PD or barrel-jack adapter (15 W minimum)     |
-| **Networking**        | Ethernet or Wi-Fi (for initial setup only — app runs fully offline) |
-| **Display (optional)**| HDMI monitor for local GUI, or headless via SSH     |
-
----
-
-## 2 — Software Prerequisites
-
-| Software              | Version               | Purpose                                     |
-|-----------------------|-----------------------|---------------------------------------------|
-| **JetPack SDK**       | 6.0+ (L4T R36.x)     | Board Support Package, CUDA, cuDNN, TensorRT |
-| **Ubuntu**            | 22.04 LTS (Jammy)     | Base OS shipped with JetPack 6              |
-| **Python**            | 3.10 or 3.11          | Runtime for the application                 |
-| **pip**               | 23.0+                 | Python package manager                      |
-| **Ollama**            | Pre-installed on board | Local LLM inference server                  |
-| **Graphviz**          | 2.43+                 | DOT → PNG flowchart rendering               |
-| **Git**               | 2.34+                 | Source code cloning                         |
-
----
-
-## 3 — JetPack SDK & OS Setup
-
-If your Jetson Orin board is **not** already flashed with JetPack:
-
-### 3.1 Flash the Board
-
-1. Download [NVIDIA SDK Manager](https://developer.nvidia.com/sdk-manager) on a host Ubuntu PC (x86_64).
-2. Connect the Jetson Orin to the host via USB-C in recovery mode.
-3. In SDK Manager, select:
-   - **Target Hardware**: Jetson Orin Nano / Orin NX
-   - **JetPack Version**: 6.0+
-   - Components: Jetson OS + Jetson SDK Components (CUDA, cuDNN, TensorRT)
-4. Flash and complete the on-device setup (language, user account, network).
-
-### 3.2 Verify CUDA
+If you want to run everything at once, copy this entire block into your Jetson terminal:
 
 ```bash
-# Confirm CUDA is available
-nvcc --version
-# Expected: cuda_12.2 or later
-
-# Confirm GPU is detected
-sudo tegrastats
-# Look for GR3D (GPU utilisation) and RAM entries
-```
-
----
-
-## 4 — System-Level Dependencies
-
-Install these on the Jetson Orin before setting up Python packages:
-
-```bash
-# Update the package index
-sudo apt update && sudo apt upgrade -y
-
-# Python build essentials
-sudo apt install -y python3-pip python3-venv python3-dev build-essential
-
-# Graphviz (required for flowchart rendering)
-sudo apt install -y graphviz libgraphviz-dev
-
-# Image processing libraries (required by Pillow & EasyOCR)
-sudo apt install -y libjpeg-dev libpng-dev libtiff-dev libwebp-dev
-
-# MuPDF system dependencies (used by PyMuPDF)
-sudo apt install -y libmupdf-dev libfreetype-dev libharfbuzz-dev
-
-# SQLite (usually pre-installed, needed by telemetry module)
-sudo apt install -y sqlite3 libsqlite3-dev
-
-# Networking utilities
-sudo apt install -y curl wget git
-```
-
----
-
-## 5 — Python Environment Setup
-
-### 5.1 Create a Virtual Environment
-
-```bash
-# Navigate to the project directory
+# ── Step 1: Navigate to project ──
 cd ~/vector_minds_edgeminds2026internship
 
-# Create a virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# ── Step 2: Check what's already installed ──
+python3 --version
+pip3 --version
+python3 -c "import torch; print('PyTorch:', torch.__version__)" 2>/dev/null || echo "PyTorch: NOT installed"
+which dot 2>/dev/null && echo "Graphviz: installed" || echo "Graphviz: NOT installed"
+
+# ── Step 3: Upgrade pip (user-level) ──
+pip3 install --user --upgrade pip setuptools wheel
+
+# ── Step 4: Install all Python dependencies (user-level) ──
+pip3 install --user streamlit PyMuPDF easyocr Pillow sentence-transformers faiss-cpu ollama graphviz numpy
+
+# ── Step 5: Add ~/.local/bin to PATH (where pip --user installs scripts) ──
+export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+
+# ── Step 6: Set Ollama endpoint ──
+export OLLAMA_HOST=http://172.17.0.1:11434
+echo 'export OLLAMA_HOST=http://172.17.0.1:11434' >> ~/.bashrc
+
+# ── Step 7: Verify Ollama connection ──
+curl -s http://172.17.0.1:11434/api/tags | python3 -m json.tool
+
+# ── Step 8: Launch the app ──
+streamlit run app.py --server.port 8501 --server.address 0.0.0.0
 ```
-
-### 5.2 Upgrade pip
-
-```bash
-pip install --upgrade pip setuptools wheel
-```
-
-### 5.3 Install PyTorch (Jetson-specific build)
-
-> ⚠️ **Do NOT install PyTorch from PyPI on Jetson.** The standard `pip install torch` will download an x86 wheel that will not work. Use NVIDIA's pre-built Jetson wheel instead.
-
-```bash
-# PyTorch 2.3+ for JetPack 6 (check NVIDIA forum for latest URL)
-pip install --no-cache-dir \
-  torch==2.3.0 \
-  --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/
-```
-
-If the above index URL has changed, find the latest Jetson PyTorch wheel at:
-- [NVIDIA PyTorch for Jetson](https://forums.developer.nvidia.com/t/pytorch-for-jetson/72048)
-- [Jetson Zoo](https://elinux.org/Jetson_Zoo)
-
-### 5.4 Install Project Dependencies
-
-```bash
-# Install all remaining Python packages
-pip install -r requirements.txt
-```
-
-#### Full Package List (`requirements.txt`)
-
-| Package                | Version   | Purpose                                          |
-|------------------------|-----------|--------------------------------------------------|
-| `streamlit`            | ≥ 1.32.0  | Web UI framework                                |
-| `PyMuPDF`              | ≥ 1.24.0  | PDF text extraction (Phase 1)                   |
-| `easyocr`              | ≥ 1.7.1   | OCR for scanned PDF pages (Phase 1)             |
-| `Pillow`               | ≥ 10.2.0  | Image processing for OCR pipeline               |
-| `sentence-transformers`| ≥ 2.5.0   | Embedding model (`all-MiniLM-L6-v2`) for RAG    |
-| `faiss-cpu`            | ≥ 1.8.0   | Vector similarity search (FAISS index)           |
-| `ollama`               | ≥ 0.2.0   | Python client for the Ollama REST API            |
-| `graphviz`             | ≥ 0.20.3  | Python bindings for Graphviz DOT rendering       |
-| `numpy`                | ≥ 1.26.0  | Numerical computation                            |
-| `torch`                | ≥ 2.2.0   | Deep learning framework (Jetson wheel — see §5.3)|
-
-> **Note on `faiss-cpu`:** On Jetson, `faiss-cpu` works well for the index sizes in this application. If you need GPU-accelerated FAISS, build `faiss-gpu` from source — but this is not required for Mentora.
 
 ---
 
-## 6 — Ollama & LLM Configuration
+## Detailed Step-by-Step Guide
 
-### ⚠️ Ollama is Already Running — Do NOT Reinstall
-
-The Ollama server is **pre-installed and already running** on the Jetson board. All approved models are pre-loaded. **Do NOT** run `ollama pull` or attempt to restart the Ollama service — it will cause unnecessary memory pressure.
-
-### 6.1 Approved Model
-
-| Parameter       | Value                       |
-|-----------------|-----------------------------|
-| **Model**       | `llama3.2:1b`               |
-| **API Endpoint**| `http://172.17.0.1:11434`   |
-| **Context Size**| 1024 tokens (saves ~500 MB RAM) |
-| **GPU Devices** | 1 (single Jetson GPU)       |
-| **Memory Map**  | Enabled (`use_mmap: True`)  |
-
-> ⛔ **`llama3.2:1b` is the ONLY permitted model on the Jetson board — no exceptions.**
-> All final demos run on `llama3.2:1b`, regardless of track. Do not attempt to pull or run any other model on the board.
-
-### 6.2 Verify Ollama is Running
+### Step 1 — Navigate to the Project
 
 ```bash
-# Check the Ollama service status
-curl http://172.17.0.1:11434/api/tags
-
-# You should see llama3.2:1b in the model list
+cd ~/vector_minds_edgeminds2026internship
 ```
 
-### 6.3 API Call Template
+If the repo isn't cloned yet:
 
-The application's `core/llm_engine.py` communicates with Ollama via its Python SDK. For direct REST testing, use:
-
-```python
-import requests
-
-API_URL = "http://172.17.0.1:11434/api/generate"
-
-payload = {
-    "model": "llama3.2:1b",          # Only approved model for Jetson deployment
-    "prompt": "Explain how backpropagation works in one paragraph.",
-    "stream": False,
-    "options": {
-        "num_ctx": 1024,             # Keep context small — saves ~500 MB RAM
-        "num_gpu": 1,                # 1 GPU device on Jetson Orin
-        "use_mmap": True             # Memory-mapped loading for Jetson
-    }
-}
-
-response = requests.post(API_URL, json=payload)
-if response.status_code == 200:
-    print(response.json()['response'])
-else:
-    print(f"Error {response.status_code}: {response.text}")
+```bash
+cd ~
+git clone https://github.com/tanumishra-sudo/vector_minds_edgeminds2026internship.git
+cd vector_minds_edgeminds2026internship
 ```
 
-### 6.4 Configure Ollama Host in the Application
+---
 
-If the app uses the Ollama Python SDK (which connects to `localhost:11434` by default), set the environment variable to point to the correct host:
+### Step 2 — Pre-Flight Checks
+
+Run these to see what's already available in the container:
+
+```bash
+# Check Python version (should be 3.10+)
+python3 --version
+
+# Check pip is available
+pip3 --version
+
+# Check if PyTorch is pre-installed (common in Jetson containers)
+python3 -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())" 2>/dev/null || echo "PyTorch is NOT installed"
+
+# Check if Graphviz binary exists
+which dot 2>/dev/null && echo "Graphviz dot: FOUND" || echo "Graphviz dot: NOT FOUND"
+
+# Check available disk space
+df -h ~
+```
+
+---
+
+### Step 3 — Install Python Packages (User-Level)
+
+> ⚠️ **Why `--user`?** The container has a **read-only root filesystem** (`/usr/lib/` is immutable). Using `pip install --user` installs packages to `~/.local/lib/python3.10/site-packages/` which is writable.
+>
+> ⚠️ **No venv needed.** `python3 -m venv` requires `ensurepip` which cannot be installed via apt on a read-only filesystem. `--user` installs achieve the same isolation.
+
+#### 3a. Upgrade pip
+
+```bash
+pip3 install --user --upgrade pip setuptools wheel
+```
+
+#### 3b. Install PyTorch (if NOT already pre-installed)
+
+First check:
+
+```bash
+python3 -c "import torch; print(torch.__version__)"
+```
+
+- **If PyTorch prints a version** → skip this step, it's already in the container.
+- **If it says `ModuleNotFoundError`** → install the Jetson ARM64 wheel:
+
+```bash
+pip3 install --user --no-cache-dir torch --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/
+```
+
+#### 3c. Install All Project Dependencies
+
+```bash
+pip3 install --user streamlit PyMuPDF easyocr Pillow sentence-transformers faiss-cpu ollama graphviz numpy
+```
+
+> This installs every package from `requirements.txt` without touching the read-only system directories.
+
+#### 3d. Add `~/.local/bin` to PATH
+
+pip `--user` installs executable scripts (like `streamlit`) to `~/.local/bin`. Make sure it's on your PATH:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Make it permanent:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### 3e. Verify Installation
+
+```bash
+# Should print the streamlit version
+streamlit --version
+
+# Should import without errors
+python3 -c "import streamlit, fitz, easyocr, PIL, sentence_transformers, faiss, ollama, graphviz; print('All packages OK')"
+```
+
+---
+
+### Step 4 — Handle Graphviz System Binary
+
+The Python `graphviz` package is a wrapper — it needs the `dot` binary on the system.
+
+```bash
+which dot
+```
+
+- **If it prints a path** (e.g., `/usr/bin/dot`) → you're good, skip ahead.
+- **If "not found"** → try installing:
+
+```bash
+sudo apt install -y graphviz 2>/dev/null
+```
+
+If that also fails (read-only filesystem), the flowchart feature won't render PNG images, but all other features (Summary Notes, Q&A, Quiz) will work fine.
+
+---
+
+### Step 5 — Configure Ollama Endpoint
+
+The Ollama server runs on the **host machine** (outside the container), accessible via the Docker bridge IP:
 
 ```bash
 export OLLAMA_HOST=http://172.17.0.1:11434
 ```
 
-Add this to your `~/.bashrc` for persistence:
+Make it permanent:
 
 ```bash
 echo 'export OLLAMA_HOST=http://172.17.0.1:11434' >> ~/.bashrc
 source ~/.bashrc
 ```
 
----
-
-## 7 — FAISS Index Pre-Build (Laptop → Jetson)
-
-The Sentence Transformers embedding model and FAISS index building are memory-intensive. It is **strongly recommended** to pre-build the index on a laptop and transfer the cache to the Jetson.
-
-### 7.1 On Your Laptop
+#### Verify Ollama is Reachable
 
 ```bash
-# 1. Run the app and upload your PDF — the app auto-generates:
-#      cache/<document_name>.index   — FAISS binary index
-#      cache/<document_name>.meta    — Pickled RAG metadata
-#      cache/<document_name>.chunks  — Pickled document chunks
-
-streamlit run app.py
-
-# 2. After processing, copy the cache/ directory
-scp -r cache/ jetson_user@<jetson_ip>:~/vector_minds_edgeminds2026internship/cache/
+curl -s http://172.17.0.1:11434/api/tags
 ```
 
-### 7.2 On the Jetson
-
-The app detects pre-built cache files automatically and offers a **"Load Cached Document"** option in the UI — no PDF re-processing required.
-
----
-
-## 8 — Performance Tuning for Jetson Orin
-
-### 8.1 Set Maximum Performance Mode
+You should see `llama3.2:1b` in the output. If not, try:
 
 ```bash
-# Set 15W high-performance power mode (mode 0 = MAXN)
-sudo nvpmodel -m 0
-
-# Lock CPU/GPU/EMC clocks to maximum frequency
-sudo jetson_clocks
+# Alternative Docker bridge IPs
+curl -s http://host.docker.internal:11434/api/tags
+curl -s http://172.17.0.1:11434/api/tags
+curl -s http://localhost:11434/api/tags
 ```
 
-### 8.2 Extend Swap Space
+Use whichever IP returns a response and update `OLLAMA_HOST` accordingly.
 
-The Jetson Orin Nano has 8 GB of unified RAM. Extending swap prevents OOM kills during embedding model loading:
-
-```bash
-# Create an 8 GB swap file
-sudo fallocate -l 8G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-
-# Make it persistent across reboots
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
-### 8.3 Verify Resource Allocation
+#### Quick LLM Test
 
 ```bash
-# Monitor GPU, CPU, and memory usage in real-time
-sudo tegrastats
-
-# Check swap is active
-free -h
-```
-
-### 8.4 Disable Unnecessary Services (Optional)
-
-Free up RAM by stopping the desktop environment if running headless:
-
-```bash
-# Stop the GUI
-sudo systemctl stop gdm3          # GNOME
-# or
-sudo systemctl stop lightdm       # LightDM
-
-# Disable it from starting on boot
-sudo systemctl disable gdm3
+python3 -c "
+import requests
+r = requests.post('http://172.17.0.1:11434/api/generate', json={
+    'model': 'llama3.2:1b',
+    'prompt': 'Say hello in one sentence.',
+    'stream': False,
+    'options': {'num_ctx': 1024, 'num_gpu': 1, 'use_mmap': True}
+})
+print(r.json()['response'] if r.status_code == 200 else f'Error: {r.text}')
+"
 ```
 
 ---
 
-## 9 — Running the Application
-
-### 9.1 Start the App
+### Step 6 — Launch the Application
 
 ```bash
-# Activate the virtual environment
 cd ~/vector_minds_edgeminds2026internship
-source venv/bin/activate
-
-# Set Ollama host (if not in bashrc)
-export OLLAMA_HOST=http://172.17.0.1:11434
-
-# Launch Streamlit
 streamlit run app.py --server.port 8501 --server.address 0.0.0.0
 ```
 
-### 9.2 Access the UI
+#### Access the UI
 
-| Access Method     | URL                                 |
-|-------------------|-------------------------------------|
-| **Local browser** | `http://localhost:8501`             |
-| **Remote (LAN)**  | `http://<jetson_ip>:8501`           |
+| Method              | URL                                |
+|---------------------|------------------------------------|
+| **On the Jetson**   | `http://localhost:8501`            |
+| **From your laptop**| `http://<jetson_ip>:8501`          |
 
-### 9.3 Recommended Workflow on Jetson
+To find the Jetson's IP:
 
-1. **Load a cached document** (pre-built on laptop — see §7) to avoid heavy PDF processing on the board.
-2. Use **Summary Notes & Flowcharts** — generated via `llama3.2:1b` through Ollama.
-3. Use **Contextual Q&A** — RAG-powered answers from the document.
-4. Use **Revision Quiz** — active recall with automated grading.
+```bash
+hostname -I
+```
 
 ---
 
-## 10 — Troubleshooting
+### Step 7 — (Optional) Pre-Build FAISS Cache on Laptop
 
-### Ollama Connection Refused
+Building the embedding index is RAM-heavy. To avoid OOM on Jetson, pre-build on your laptop:
 
-```
-Error: Connection refused at http://172.17.0.1:11434
-```
+#### On Your Laptop
 
-- **Cause:** Ollama service is not running or is on a different port.
-- **Fix:** Check the service: `systemctl status ollama` or verify the Docker bridge IP.
-
-### Out of Memory (OOM) Errors
-
-```
-Killed (signal 9)
+```bash
+cd vector_minds_edgeminds2026internship
+pip install -r requirements.txt
+streamlit run app.py
+# Upload your PDF → app generates cache/*.index, *.meta, *.chunks files
 ```
 
-- **Cause:** Insufficient RAM for model + embeddings.
-- **Fix:**
-  1. Ensure swap is active: `free -h`
-  2. Use pre-built FAISS cache (§7) to skip embedding on-device
-  3. Close unnecessary processes: `sudo systemctl stop gdm3`
+#### Copy Cache to Jetson
 
-### PyTorch Import Error on Jetson
-
-```
-Illegal instruction (core dumped)
+```bash
+scp -r cache/ codex@<jetson_ip>:~/vector_minds_edgeminds2026internship/cache/
 ```
 
-- **Cause:** You installed x86 PyTorch from PyPI instead of the Jetson ARM64 wheel.
-- **Fix:** Uninstall and reinstall using the NVIDIA Jetson wheel (§5.3):
-  ```bash
-  pip uninstall torch -y
-  pip install torch==2.3.0 --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/
-  ```
+The app will detect cached files and offer **"Load Cached Document"** — no PDF re-processing needed.
 
-### Graphviz "dot not found"
+---
 
+## Troubleshooting
+
+### `streamlit: command not found`
+
+```bash
+# pip --user scripts aren't on PATH
+export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 ```
-graphviz.backend.execute.ExecutableNotFound: failed to execute 'dot'
+
+### `Read-only file system` on apt install
+
+This is expected in the container. Use `pip install --user` for all Python packages. System binaries like `graphviz` may already be pre-installed — check with `which dot`.
+
+### `ModuleNotFoundError: No module named 'xyz'`
+
+```bash
+# Reinstall the missing package
+pip3 install --user <package_name>
 ```
 
-- **Cause:** Graphviz system binary not installed.
-- **Fix:** `sudo apt install -y graphviz`
+### `Connection refused` to Ollama
 
-### Streamlit Not Accessible Remotely
+```bash
+# Try different endpoints
+curl http://172.17.0.1:11434/api/tags
+curl http://host.docker.internal:11434/api/tags
+curl http://localhost:11434/api/tags
 
-- **Cause:** Streamlit binds to `localhost` by default.
-- **Fix:** Use `--server.address 0.0.0.0`:
-  ```bash
-  streamlit run app.py --server.address 0.0.0.0
-  ```
+# Use whichever works
+export OLLAMA_HOST=http://<working_ip>:11434
+```
+
+### Out of Memory (OOM) — `Killed (signal 9)`
+
+```bash
+# Check memory
+free -h
+
+# Use pre-built FAISS cache (Step 7) to skip embedding on-device
+# Close other processes if possible
+```
+
+### `Illegal instruction (core dumped)` on import torch
+
+```bash
+# Wrong PyTorch build (x86 instead of ARM64). Reinstall:
+pip3 uninstall torch -y
+pip3 install --user --no-cache-dir torch --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/
+```
 
 ### EasyOCR CUDA Errors
 
-- **Cause:** EasyOCR may attempt to use CUDA but fail on Jetson due to memory constraints.
-- **Fix:** Force CPU mode by setting the environment variable before launching:
-  ```bash
-  export EASYOCR_GPU=False
-  ```
+```bash
+# Force CPU mode
+export EASYOCR_GPU=False
+```
 
 ---
 
-## Quick Reference — Full Setup Commands
+## Model Configuration Reference
 
-```bash
-# ── System Dependencies ──
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3-pip python3-venv python3-dev build-essential \
-  graphviz libgraphviz-dev libjpeg-dev libpng-dev libtiff-dev libwebp-dev \
-  libmupdf-dev libfreetype-dev libharfbuzz-dev sqlite3 libsqlite3-dev curl wget git
+| Parameter       | Value                         | Notes                           |
+|-----------------|-------------------------------|---------------------------------|
+| **Model**       | `llama3.2:1b`                 | ⛔ Only permitted model         |
+| **API Endpoint**| `http://172.17.0.1:11434`     | Docker bridge to host Ollama    |
+| **Context**     | 1024 tokens                   | Saves ~500 MB RAM               |
+| **GPU Devices** | 1                             | Single Jetson GPU               |
+| **Memory Map**  | `True`                        | Required for Jetson             |
 
-# ── Performance Tuning ──
-sudo nvpmodel -m 0
-sudo jetson_clocks
-sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-
-# ── Python Environment ──
-cd ~/vector_minds_edgeminds2026internship
-python3 -m venv venv && source venv/bin/activate
-pip install --upgrade pip setuptools wheel
-
-# ── PyTorch (Jetson ARM64 wheel) ──
-pip install torch==2.3.0 --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/
-
-# ── Project Dependencies ──
-pip install -r requirements.txt
-
-# ── Ollama Host ──
-export OLLAMA_HOST=http://172.17.0.1:11434
-
-# ── Launch ──
-streamlit run app.py --server.port 8501 --server.address 0.0.0.0
-```
+> ⛔ **`llama3.2:1b` is the ONLY permitted model — no exceptions.** Do not pull or run any other model.
 
 ---
 
