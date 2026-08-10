@@ -20,6 +20,33 @@ from pathlib import Path
 # ── Ensure project root is on the Python path ──
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# ── Patch pytz missing tzdata.zi on minimal system environments ──
+import io
+import builtins
+try:
+    import pytz
+except (FileNotFoundError, OSError):
+    _orig_path_open = Path.open
+    _orig_builtins_open = builtins.open
+
+    def _patched_path_open(self, *args, **kwargs):
+        if "tzdata.zi" in str(self):
+            return io.StringIO("# dummy tzdata\n2024a\n")
+        return _orig_path_open(self, *args, **kwargs)
+
+    def _patched_builtins_open(file, *args, **kwargs):
+        if isinstance(file, (str, bytes, Path)) and "tzdata.zi" in str(file):
+            return io.StringIO("# dummy tzdata\n2024a\n")
+        return _orig_builtins_open(file, *args, **kwargs)
+
+    Path.open = _patched_path_open
+    builtins.open = _patched_builtins_open
+    try:
+        import pytz
+    finally:
+        Path.open = _orig_path_open
+        builtins.open = _orig_builtins_open
+
 from core.ingestion import PDFIngestionEngine
 from core.rag_store import RAGStore
 from core.llm_engine import LLMEngine
@@ -2085,7 +2112,7 @@ def main():
     ])
 
     with tab_upload:
-        render_upload_tab()  
+        render_upload_tab()     
 
     with tab_summary:
         render_summary_tab()  
