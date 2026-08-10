@@ -125,44 +125,34 @@ class PDFIngestionEngine:
         return self._ocr_reader
 
     def _ocr_page(self, page: fitz.Page) -> str:
-        """Render a single PDF page to an image and run OCR on it.
+        """Render a single PDF page to an image and run OCR on it with fallback handling."""
+        try:
+            import numpy as np
 
-        The page is rasterised at ``_OCR_RENDER_DPI`` resolution, then
-        passed to EasyOCR which returns a list of detected text blocks.
-        The blocks are joined with spaces to form a single string.
+            zoom = _OCR_RENDER_DPI / 72  # fitz default is 72 DPI
+            matrix = fitz.Matrix(zoom, zoom)
+            pixmap: fitz.Pixmap = page.get_pixmap(matrix=matrix, alpha=False)
 
-        Parameters
-        ----------
-        page : fitz.Page
-            A PyMuPDF page object.
+            try:
+                img_array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+                    pixmap.height, pixmap.width, 3
+                )
+            except Exception:
+                from PIL import Image
+                img = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+                img_array = np.asarray(img)
 
-        Returns
-        -------
-        str
-            The OCR-extracted text for the page, or an empty string if
-            OCR produces no results.
-        """
-        import numpy as np  # deferred — only needed when OCR is invoked
+            reader = self._get_ocr_reader()
+            results = reader.readtext(img_array, detail=0)  # detail=0 → text only
 
-        # Render page to a high-resolution pixmap (RGB, no alpha).
-        zoom = _OCR_RENDER_DPI / 72  # fitz default is 72 DPI
-        matrix = fitz.Matrix(zoom, zoom)
-        pixmap: fitz.Pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-
-        # Convert the pixmap to a NumPy array that EasyOCR can consume.
-        # Pixmap.samples is a raw bytes buffer in RGB order.
-        img_array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
-            pixmap.height, pixmap.width, 3
-        )
-
-        reader = self._get_ocr_reader()
-        results = reader.readtext(img_array, detail=0)  # detail=0 → text only
-
-        ocr_text = " ".join(results).strip()
-        logger.debug(
-            "OCR on page %d produced %d characters.", page.number + 1, len(ocr_text)
-        )
-        return ocr_text
+            ocr_text = " ".join(results).strip()
+            logger.debug(
+                "OCR on page %d produced %d characters.", page.number + 1, len(ocr_text)
+            )
+            return ocr_text
+        except Exception as err:
+            logger.warning("OCR processing skipped on page %d: %s", page.number + 1, err)
+            return ""
 
     def _recursive_text_chunker(self, text: str, page_num: int) -> list[dict]:
         """Split *text* into overlapping chunks of at most *chunk_size* chars.
