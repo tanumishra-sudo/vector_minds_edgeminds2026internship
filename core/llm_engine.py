@@ -197,13 +197,14 @@ class LLMEngine:
 
     def _blocking_response(self, messages: list[dict[str, str]]) -> str:
         """Call Ollama in blocking mode and return the full response text."""
+        options = {"num_ctx": 2048, "num_thread": 4, "temperature": 0.3}
         try:
             response = ollama.chat(
                 model=self.model_name,
                 messages=messages,
                 stream=False,
+                options=options,
             )
-            # Response structure: {"message": {"role": "assistant", "content": "..."}}
             content = (
                 response.get("message", {}).get("content", "")
                 if isinstance(response, dict)
@@ -212,8 +213,23 @@ class LLMEngine:
             return content.strip()
 
         except ollama.ResponseError as exc:
-            logger.error("Ollama response error: %s", exc)
-            return f"⚠️ **LLM Error:** The model returned an error — {exc}"
+            logger.warning("Ollama response error with num_ctx=2048: %s. Retrying with num_ctx=1024...", exc)
+            try:
+                response = ollama.chat(
+                    model=self.model_name,
+                    messages=messages,
+                    stream=False,
+                    options={"num_ctx": 1024, "num_thread": 2, "temperature": 0.3},
+                )
+                content = (
+                    response.get("message", {}).get("content", "")
+                    if isinstance(response, dict)
+                    else getattr(getattr(response, "message", None), "content", "")
+                )
+                return content.strip()
+            except Exception as retry_exc:
+                logger.error("Ollama retry failed: %s", retry_exc)
+                return f"⚠️ **LLM Error:** The model returned an error — {exc}"
         except Exception as exc:  # noqa: BLE001
             logger.error("Ollama connection failure: %s", exc)
             return (
@@ -226,14 +242,15 @@ class LLMEngine:
         self, messages: list[dict[str, str]]
     ) -> Generator[str, None, None]:
         """Call Ollama in streaming mode and yield text chunks."""
+        options = {"num_ctx": 2048, "num_thread": 4, "temperature": 0.3}
         try:
             stream = ollama.chat(
                 model=self.model_name,
                 messages=messages,
                 stream=True,
+                options=options,
             )
             for chunk in stream:
-                # Each chunk: {"message": {"content": "..."}}
                 token = (
                     chunk.get("message", {}).get("content", "")
                     if isinstance(chunk, dict)
@@ -243,8 +260,12 @@ class LLMEngine:
                     yield token
 
         except ollama.ResponseError as exc:
-            logger.error("Ollama streaming response error: %s", exc)
-            yield f"\n\n⚠️ **LLM Error:** {exc}"
+            logger.warning("Ollama streaming error: %s. Falling back to non-streaming response...", exc)
+            try:
+                fallback_text = self._blocking_response(messages)
+                yield fallback_text
+            except Exception as fallback_exc:
+                yield f"\n\n⚠️ **LLM Error:** {exc}"
         except Exception as exc:  # noqa: BLE001
             logger.error("Ollama streaming connection failure: %s", exc)
             yield (
@@ -385,7 +406,7 @@ class LLMEngine:
         try:
             response = ollama.chat(
                 model=self.model_name, messages=messages, stream=False,
-                options={"temperature": 0, "top_p": 0.1}
+                options={"temperature": 0, "top_p": 0.1, "num_ctx": 2048, "num_thread": 4}
             )
             content = (response.get("message", {}).get("content", "")
                        if isinstance(response, dict)
