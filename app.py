@@ -20,23 +20,38 @@ from pathlib import Path
 # ── Ensure project root is on the Python path ──
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ── Patch pytz missing tzdata.zi on minimal system environments ──
+# ── Patch pytz missing zoneinfo files on minimal system environments ──
 import io
 import builtins
-try:
-    import pytz
-except (FileNotFoundError, OSError):
+def _setup_pytz_fallback():
     _orig_path_open = Path.open
     _orig_builtins_open = builtins.open
 
+    def _mock_open_content(target):
+        s = str(target)
+        if "tzdata.zi" in s:
+            return io.StringIO("# version 2024a\n")
+        elif "zone1970.tab" in s or "zone.tab" in s or "iso3166.tab" in s:
+            return io.StringIO("US\t+404251-0740023\tAmerica/New_York\nUTC\t+0000\tUTC\n")
+        else:
+            return io.BytesIO(b"TZif2" + b"\x00" * 40)
+
     def _patched_path_open(self, *args, **kwargs):
-        if "tzdata.zi" in str(self):
-            return io.StringIO("# dummy tzdata\n2024a\n")
+        if "zoneinfo" in str(self):
+            mode = args[0] if args else kwargs.get("mode", "r")
+            res = _mock_open_content(self)
+            if "b" in mode and isinstance(res, io.StringIO):
+                return io.BytesIO(res.getvalue().encode("utf-8"))
+            return res
         return _orig_path_open(self, *args, **kwargs)
 
     def _patched_builtins_open(file, *args, **kwargs):
-        if isinstance(file, (str, bytes, Path)) and "tzdata.zi" in str(file):
-            return io.StringIO("# dummy tzdata\n2024a\n")
+        if isinstance(file, (str, bytes, Path)) and "zoneinfo" in str(file):
+            mode = args[0] if args else kwargs.get("mode", "r")
+            res = _mock_open_content(file)
+            if "b" in mode and isinstance(res, io.StringIO):
+                return io.BytesIO(res.getvalue().encode("utf-8"))
+            return res
         return _orig_builtins_open(file, *args, **kwargs)
 
     Path.open = _patched_path_open
@@ -46,6 +61,8 @@ except (FileNotFoundError, OSError):
     finally:
         Path.open = _orig_path_open
         builtins.open = _orig_builtins_open
+
+_setup_pytz_fallback()
 
 from core.ingestion import PDFIngestionEngine
 from core.rag_store import RAGStore

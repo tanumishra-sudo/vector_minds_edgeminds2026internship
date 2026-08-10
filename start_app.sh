@@ -27,6 +27,9 @@ fi
 # ── 4. Pull Latest Code ──
 git pull origin main 2>/dev/null || true
 
+# ── 4b. Ensure Python Dependencies ──
+pip3 install --user --no-cache-dir tzdata pytz -r requirements.txt pyngrok >/dev/null 2>&1 || true
+
 # ── 5. Ensure Ollama Service is Active ──
 if ! curl -s http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     echo "Starting Ollama service..."
