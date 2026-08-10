@@ -37,16 +37,22 @@ if ! curl -s http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     sleep 4
 fi
 
-# ── 6. Start ngrok Tunnel in Background (silent logging) ──
-python3 -c "from pyngrok import ngrok; ngrok.set_auth_token('3HiI2mchF3YRFEwXvZxr7DcCTB8_4iaN1k6yZhVdMWv32BXTh'); t = ngrok.connect('127.0.0.1:8501'); print('\n========================================\n🌐 YOUR NGROK PUBLIC URL:\n', t.public_url, '\n========================================\n', flush=True); ngrok.get_ngrok_process().proc.wait()" > /tmp/ngrok.log 2>&1 &
+# ── 6. Start ngrok Tunnel in Background ──
+rm -f /tmp/ngrok.log 2>/dev/null
+python3 -c "from pyngrok import ngrok; ngrok.set_auth_token('3HiI2mchF3YRFEwXvZxr7DcCTB8_4iaN1k6yZhVdMWv32BXTh'); t = ngrok.connect('127.0.0.1:8501'); print('URL:' + t.public_url, flush=True); ngrok.get_ngrok_process().proc.wait()" > /tmp/ngrok.log 2>&1 &
 
-sleep 3
+# ── 7. Wait for URL to initialize ──
+for i in {1..8}; do
+    if grep -q "URL:https://" /tmp/ngrok.log 2>/dev/null; then
+        break
+    fi
+    sleep 1
+done
 
-# ── 7. Display Public URL ──
 echo ""
 echo "========================================"
 echo "🌐 YOUR NGROK PUBLIC URL:"
-python3 -c "from pyngrok import ngrok; tunnels = ngrok.get_tunnels(); print(tunnels[0].public_url if tunnels else 'Tunnel initializing...')" 2>/dev/null
+grep -o "https://[a-zA-Z0-9.-]*\.ngrok[a-zA-Z0-9.-]*" /tmp/ngrok.log 2>/dev/null || cat /tmp/ngrok.log
 echo "========================================"
 echo ""
 
