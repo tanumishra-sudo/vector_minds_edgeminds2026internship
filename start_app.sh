@@ -12,6 +12,8 @@ mkdir -p ~/tmp ~/.cache/pip
 export TMPDIR=$HOME/tmp
 export PIP_CACHE_DIR=$HOME/.cache/pip
 export PATH="$HOME/.local/bin:$PATH"
+export OLLAMA_NUM_PARALLEL=1
+export OLLAMA_MAX_LOADED_MODELS=1
 
 # ── 3. Navigate to Project Directory ──
 PROJECT_DIR="$HOME/vector_minds_edgeminds2026internship"

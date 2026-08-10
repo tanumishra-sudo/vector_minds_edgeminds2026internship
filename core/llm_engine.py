@@ -213,13 +213,13 @@ class LLMEngine:
             return content.strip()
 
         except ollama.ResponseError as exc:
-            logger.warning("Ollama response error with num_ctx=2048: %s. Retrying with num_ctx=1024...", exc)
+            logger.warning("Ollama response error: %s. Retrying on CPU mode (num_gpu=0)...", exc)
             try:
                 response = ollama.chat(
                     model=self.model_name,
                     messages=messages,
                     stream=False,
-                    options={"num_ctx": 1024, "num_thread": 2, "temperature": 0.3},
+                    options={"num_ctx": 1024, "num_gpu": 0, "num_thread": 4, "temperature": 0.3},
                 )
                 content = (
                     response.get("message", {}).get("content", "")
@@ -228,7 +228,7 @@ class LLMEngine:
                 )
                 return content.strip()
             except Exception as retry_exc:
-                logger.error("Ollama retry failed: %s", retry_exc)
+                logger.error("Ollama CPU retry failed: %s", retry_exc)
                 return f"⚠️ **LLM Error:** The model returned an error — {exc}"
         except Exception as exc:  # noqa: BLE001
             logger.error("Ollama connection failure: %s", exc)
@@ -260,11 +260,23 @@ class LLMEngine:
                     yield token
 
         except ollama.ResponseError as exc:
-            logger.warning("Ollama streaming error: %s. Falling back to non-streaming response...", exc)
+            logger.warning("Ollama streaming error: %s. Retrying on CPU mode (num_gpu=0)...", exc)
             try:
-                fallback_text = self._blocking_response(messages)
-                yield fallback_text
-            except Exception as fallback_exc:
+                stream = ollama.chat(
+                    model=self.model_name,
+                    messages=messages,
+                    stream=True,
+                    options={"num_ctx": 1024, "num_gpu": 0, "num_thread": 4, "temperature": 0.3},
+                )
+                for chunk in stream:
+                    token = (
+                        chunk.get("message", {}).get("content", "")
+                        if isinstance(chunk, dict)
+                        else getattr(getattr(chunk, "message", None), "content", "")
+                    )
+                    if token:
+                        yield token
+            except Exception as retry_exc:
                 yield f"\n\n⚠️ **LLM Error:** {exc}"
         except Exception as exc:  # noqa: BLE001
             logger.error("Ollama streaming connection failure: %s", exc)
