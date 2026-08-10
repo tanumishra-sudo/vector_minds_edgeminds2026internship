@@ -64,6 +64,18 @@ def _setup_pytz_fallback():
 
 _setup_pytz_fallback()
 
+# ── Patch PyTorch missing DTensor on Jetson ARM64 builds ──
+try:
+    import torch
+    import torch.distributed
+    import torch.distributed.tensor
+    if not hasattr(torch.distributed.tensor, "DTensor"):
+        class DTensor:
+            pass
+        torch.distributed.tensor.DTensor = DTensor
+except Exception:
+    pass
+
 from core.ingestion import PDFIngestionEngine
 from core.rag_store import RAGStore
 from core.llm_engine import LLMEngine
