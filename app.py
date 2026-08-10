@@ -64,17 +64,28 @@ def _setup_pytz_fallback():
 
 _setup_pytz_fallback()
 
-# ── Patch PyTorch missing DTensor on Jetson ARM64 builds ──
+# ── Patch PyTorch missing DTensor & _utils on Jetson ARM64 builds ──
+import types
 try:
     import torch
     import torch.distributed
     import torch.distributed.tensor
-    if not hasattr(torch.distributed.tensor, "DTensor"):
-        class DTensor:
-            pass
-        torch.distributed.tensor.DTensor = DTensor
 except Exception:
     pass
+
+if "torch.distributed.tensor._utils" not in sys.modules:
+    mock_dtensor_utils = types.ModuleType("torch.distributed.tensor._utils")
+    mock_dtensor_utils.compute_local_shape_and_global_offset = lambda *a, **kw: (None, None)
+    sys.modules["torch.distributed.tensor._utils"] = mock_dtensor_utils
+
+if "torch.distributed.tensor" in sys.modules:
+    dt_mod = sys.modules["torch.distributed.tensor"]
+    if not hasattr(dt_mod, "DTensor"):
+        class DTensor:
+            pass
+        dt_mod.DTensor = DTensor
+    if not hasattr(dt_mod, "_utils"):
+        dt_mod._utils = sys.modules["torch.distributed.tensor._utils"]
 
 from core.ingestion import PDFIngestionEngine
 from core.rag_store import RAGStore
